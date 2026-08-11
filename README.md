@@ -89,7 +89,8 @@ PS C:\Users\Александр\Documents\Project3\ter-homeworks\02\src>
 ### 5. Выполняем команду curl ifconfig.me на сервере.
 Подключаюсь через MobaXterm. Добавляю тот самый созданный ssh ключик, который делали для сервисного аккаунта authorized_key.json.
 
-<img width="404" height="70" alt="image" src="https://github.com/user-attachments/assets/64f37d68-1a1e-47fa-a73b-71cb1291fc57" />
+<img width="608" height="404" alt="image" src="https://github.com/user-attachments/assets/677ef4fb-bc83-43c6-b754-902b62de3492" />
+
 
 ### 6. 
 Исходя из документации yandex cloud можно дать следущие ответы:
@@ -100,10 +101,531 @@ core_fraction = 5 - гарантирует виртуальной машине 5
 
 Скриншоты из ЛК yandex cloud:
 
-<img width="2558" height="620" alt="image" src="https://github.com/user-attachments/assets/ab8d2d69-a40d-4744-94fa-4b3ea8e6671e" />
+<img width="2548" height="899" alt="image" src="https://github.com/user-attachments/assets/7296acd1-9f93-4094-9b5e-5fcacd707528" />
 
 Скриншот команды curl:
 
-<img width="792" height="394" alt="image" src="https://github.com/user-attachments/assets/b49dd86b-191c-441e-857a-8984c9143bb2" />
+<img width="608" height="404" alt="image" src="https://github.com/user-attachments/assets/bb6904b9-6b48-4ef3-95b8-72e225ae4c4c" />
 
+## Задание 2
+
+### 1-3 Заменяем все хардкор-значения 
+<details>
+<summary>Код main.tf</summary>
+
+```
+data "yandex_compute_image" "ubuntu" {
+  family = var.vm_web_image_family
+}
+
+resource "yandex_compute_instance" "platform" {
+  name        = var.vm_web_name
+  platform_id = var.vm_web_platform_id
+
+  resources {
+    cores         = var.vm_web_cores
+    memory        = var.vm_web_memory
+    core_fraction = var.vm_web_core_fraction
+  }
+
+  boot_disk {
+    initialize_params {
+      image_id = data.yandex_compute_image.ubuntu.image_id
+    }
+  }
+
+  scheduling_policy {
+    preemptible = var.vm_web_preemptible
+  }
+
+  network_interface {
+    subnet_id = yandex_vpc_subnet.develop.id
+    nat       = var.vm_web_nat
+  }
+}
+```
+
+</details>
+
+И меняем захардкорженные значения:
+
+<details>
+<summary>Код variables.tf</summary>
+
+```
+variable "vm_web_image_family" {
+  type    = string
+  default = "ubuntu-2004-lts"
+}
+
+variable "vm_web_name" {
+  type    = string
+  default = "netology-develop-platform-web"
+}
+
+variable "vm_web_platform_id" {
+  type    = string
+  default = "standard-v1"
+}
+
+variable "vm_web_cores" {
+  type    = number
+  default = 2
+}
+
+variable "vm_web_memory" {
+  type    = number
+  default = 1
+}
+
+variable "vm_web_core_fraction" {
+  type    = number
+  default = 5
+}
+
+variable "vm_web_preemptible" {
+  type    = bool
+  default = true
+}
+
+variable "vm_web_nat" {
+  type    = bool
+  default = true
+}
+```
+
+</details>
+
+Проверяем terraform plan:
+
+<img width="635" height="195" alt="image" src="https://github.com/user-attachments/assets/a23b40a0-f410-4ec7-9bb1-2d05dbbc2faf" />
+
+
+
+## Задание 3.
+### 1-3
+
+Добавляю вторую виртуалку на ru-central1-b
+
+<details>
+<summary>Код main.tf</summary>
+
+```hcl
+resource "yandex_vpc_network" "develop" {
+  name = var.vpc_name
+}
+
+resource "yandex_vpc_subnet" "develop" {
+  name           = var.vpc_name
+  zone           = var.default_zone
+  network_id     = yandex_vpc_network.develop.id
+  v4_cidr_blocks = var.default_cidr
+}
+
+resource "yandex_vpc_subnet" "develop_db" {
+  name           = "${var.vpc_name}-db"
+  zone           = var.vm_db_zone
+  network_id     = yandex_vpc_network.develop.id
+  v4_cidr_blocks = var.vm_db_cidr
+}
+
+data "yandex_compute_image" "ubuntu" {
+  family = var.vm_web_image_family
+}
+
+data "yandex_compute_image" "ubuntu_db" {
+  family = var.vm_db_image_family
+}
+
+resource "yandex_compute_instance" "platform" {
+  name        = var.vm_web_name
+  zone        = var.default_zone
+  platform_id = var.vm_web_platform_id
+
+  resources {
+    cores         = var.vm_web_cores
+    memory        = var.vm_web_memory
+    core_fraction = var.vm_web_core_fraction
+  }
+
+  boot_disk {
+    initialize_params {
+      image_id = data.yandex_compute_image.ubuntu.image_id
+    }
+  }
+
+  scheduling_policy {
+    preemptible = var.vm_web_preemptible
+  }
+
+  network_interface {
+    subnet_id = yandex_vpc_subnet.develop.id
+    nat       = var.vm_web_nat
+  }
+
+  metadata = {
+    "serial-port-enable" = "1"
+    "ssh-keys"           = "ubuntu:${var.vms_ssh_root_key}"
+  }
+}
+
+resource "yandex_compute_instance" "platform_db" {
+  name        = var.vm_db_name
+  zone        = var.vm_db_zone
+  platform_id = var.vm_db_platform_id
+
+  resources {
+    cores         = var.vm_db_cores
+    memory        = var.vm_db_memory
+    core_fraction = var.vm_db_core_fraction
+  }
+
+  boot_disk {
+    initialize_params {
+      image_id = data.yandex_compute_image.ubuntu_db.image_id
+    }
+  }
+
+  scheduling_policy {
+    preemptible = var.vm_db_preemptible
+  }
+
+  network_interface {
+    subnet_id = yandex_vpc_subnet.develop_db.id
+    nat       = var.vm_db_nat
+  }
+
+  metadata = {
+    "serial-port-enable" = "1"
+    "ssh-keys"           = "ubuntu:${var.vms_ssh_root_key}"
+  }
+}
+```
+
+</details>
+
+<details>
+<summary>Код vms_platform.tf</summary>
+
+```hcl
+variable "vm_web_image_family" {
+  type    = string
+  default = "ubuntu-2004-lts"
+}
+
+variable "vm_web_name" {
+  type    = string
+  default = "netology-develop-platform-web"
+}
+
+variable "vm_web_platform_id" {
+  type    = string
+  default = "standard-v1"
+}
+
+variable "vm_web_cores" {
+  type    = number
+  default = 2
+}
+
+variable "vm_web_memory" {
+  type    = number
+  default = 1
+}
+
+variable "vm_web_core_fraction" {
+  type    = number
+  default = 5
+}
+
+variable "vm_web_preemptible" {
+  type    = bool
+  default = true
+}
+
+variable "vm_web_nat" {
+  type    = bool
+  default = true
+}
+
+variable "vm_db_image_family" {
+  type    = string
+  default = "ubuntu-2004-lts"
+}
+
+variable "vm_db_name" {
+  type    = string
+  default = "netology-develop-platform-db"
+}
+
+variable "vm_db_zone" {
+  type    = string
+  default = "ru-central1-b"
+}
+
+variable "vm_db_platform_id" {
+  type    = string
+  default = "standard-v1"
+}
+
+variable "vm_db_cores" {
+  type    = number
+  default = 2
+}
+
+variable "vm_db_memory" {
+  type    = number
+  default = 2
+}
+
+variable "vm_db_core_fraction" {
+  type    = number
+  default = 20
+}
+
+variable "vm_db_preemptible" {
+  type    = bool
+  default = true
+}
+
+variable "vm_db_nat" {
+  type    = bool
+  default = true
+}
+
+variable "vm_db_cidr" {
+  type    = list(string)
+  default = ["10.0.2.0/24"]
+}
+```
+
+</details>
+
+Скриншот подтверждения создания 2-ух ВМ:
+
+<img width="2494" height="483" alt="image" src="https://github.com/user-attachments/assets/cd0b4569-9013-46e1-bcff-cbe822db9fda" />
+
+
+
+## Задание 4.
+### 1-2.
+
+Делаем output файл простой и понятный с выводами "instance_name", "external_ip","fqdn" для каждой ВМ
+
+```
+output "vm_info" {
+  value = {
+    web = {
+      instance_name = yandex_compute_instance.platform.name
+      external_ip   = yandex_compute_instance.platform.network_interface[0].nat_ip_address
+      fqdn          = yandex_compute_instance.platform.fqdn
+    }
+
+    db = {
+      instance_name = yandex_compute_instance.platform_db.name
+      external_ip   = yandex_compute_instance.platform_db.network_interface[0].nat_ip_address
+      fqdn          = yandex_compute_instance.platform_db.fqdn
+    }
+  }
+}
+```
+
+Вывод из консоли:
+
+<img width="782" height="412" alt="image" src="https://github.com/user-attachments/assets/8b33c3a0-0214-471e-a32d-c4891839ecc9" />
+<img width="628" height="257" alt="image" src="https://github.com/user-attachments/assets/5b21e5ad-f847-4f6d-aeaa-a9b896b02a5a" />
+
+##Задание 5.
+### 1-3.
+Для того, чтобы terraform правильно прочитал наши переменные, мы его разделили на две части:
+"project_name" и "platform_name" Добавили в конец нашего vms_platform.tf:
+
+```
+variable "project_name" {
+  type    = string
+  default = "netology"
+}
+
+variable "platform_name" {
+  type    = string
+  default = "platform"
+}
+```
+Далее вставляем по примеру из лекции в locals:
+
+```
+locals {
+  vm_web_name = "${var.project_name}-${var.vpc_name}-${var.platform_name}-web"
+  vm_db_name  = "${var.project_name}-${var.vpc_name}-${var.platform_name}-db"
+}
+```
+
+Тут стоит отметить, что vpc_name уже присутствует в variables.tf, поэтому её можно не объявлять заново.(отметит что это дубликат)
+
+И заменяем в main.tf:
+```
+  name        = local.vm_web_name
+и
+  name        = local.vm_db_name
+```
+Применяем terraform apply - без изменений!
+
+## Задание 6
+### 1 Ресурсы.
+Присваиваем значения в vms_platform тип ресурсов в map:
+
+```
+variable "vms_resources" {
+  type = map(object({
+    cores         = number
+    memory        = number
+    core_fraction = number
+    hdd_size      = number
+    hdd_type      = string
+  }))
+}
+```
+
+Создаем файлик terraform.tfvars и добавляем туда то, что нам нужно:
+
+```
+vms_resources = {
+  web = {
+    cores         = 2
+    memory        = 1
+    core_fraction = 5
+    hdd_size      = 10
+    hdd_type      = "network-hdd"
+  }
+
+  db = {
+    cores         = 2
+    memory        = 2
+    core_fraction = 20
+    hdd_size      = 10
+    hdd_type      = "network-ssd"
+  }
+}
+```
+Делаем также и для metadata:
+
+```
+metadata = {
+  "serial-port-enable" = "1"
+  "ssh-keys"           = "ubuntu:ssh-rsa AAAAB3N*******op0OP5MUUQX"
+}
+```
+
+Нужно закомментировать старый ssh ключ и добавить в main.tf по новому:
+
+```
+metadata = var.metadata
+```
+Комментируем всё старое и запускаем terraform validate, terraform plan:
+
+<img width="776" height="412" alt="image" src="https://github.com/user-attachments/assets/5ff7d0ea-a701-45f6-8c81-2b130945a7c5" />
+
+Изменений никаких нет! Задание закрываем.
+
+## Задание 7*
+
+### 1.
+Командой local.test_list[1] можно отобразить второй элемент test_list.
+Вывод:
+
+```
+ local.test_list[1]
+"staging"
+```
+### 2. 
+Длина списка test_list c помощью leght:
+
+```
+> length(local.test_list)
+3
+```
+
+### 3. 
+
+Погуглив, немного не понял, но там в терраформе другая форма немного используется. Но гугл АИ дал подсказку.
+Сначала попробовал такое:
+
+```
+> keys(local.test_map)
+[
+  "admin",
+  "user",
+]
+```
+Видим два ключа, пробуем вставить admin:
+
+```
+> local.test_map["admin"]
+"John"
+> 
+```
+Это и есть ответ.
+
+### 4.
+
+```
+> local.test_list[2]
+"production"
+> local.servers["production"].image
+"ubuntu-20-04"
+> local.servers["production"].cpu
+10
+> local.servers["production"].ram
+40
+```
+
+Проверили добавляем фразу по чуть чуть:
+
+```
+> "${local.test_map.admin} is ${keys(local.test_map)[0]}"
+"John is admin"
+> "${local.test_map.admin} is ${keys(local.test_map)[0]} for ${local.test_list[2]} server"
+"John is admin for production server"
+> "${local.test_map.admin} is ${keys(local.test_map)[0]} for ${local.test_list[2]} server based on OS ${local.servers[local.test_list[2]].image}"
+"John is admin for production server based on OS ubuntu-20-04"
+> "${local.test_map.admin} is ${keys(local.test_map)[0]} for ${local.test_list[2]} server based on OS ${local.servers[local.test_list[2]].image} with ${local.servers[local.test_list[2]].cpu} vcpu, ${local.servers[local.test_list[2]].ram} ram and ${length(local.servers[local.test_list[2]].disks)} virtual disks"
+"John is admin for production server based on OS ubuntu-20-04 with 10 vcpu, 40 ram and 4 virtual disks"
+```
+## Задание 8*
+
+### 1-2.
+
+Добавим кусок кода в terraform.tfvars.
+Делаем validate и заходим в консоль:
+
+```
+> var.test
+tolist([
+  tomap({
+    "dev1" = tolist([
+      "ssh -o 'StrictHostKeyChecking=no' ubuntu@62.84.124.117",
+      "10.0.1.7",
+    ])
+  }),
+  tomap({
+    "dev2" = tolist([
+      "ssh -o 'StrictHostKeyChecking=no' ubuntu@84.252.140.88",
+      "10.0.2.29",
+    ])
+  }),
+  tomap({
+    "prod1" = tolist([
+      "ssh -o 'StrictHostKeyChecking=no' ubuntu@51.250.2.101",
+      "10.0.1.30",
+    ])
+  }),
+])
+> var.test[0]["dev1"][0]
+"ssh -o 'StrictHostKeyChecking=no' ubuntu@62.84.124.117"
+> 
+```
+
+Задание выполнено.
+
+## Задание 9*
 
