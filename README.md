@@ -629,3 +629,96 @@ tolist([
 
 ## Задание 9*
 
+После того, как мы отключим внешние айпи адреса, через MobaXterm к серверам уже не подключиться.
+
+Сначала я добавил в terraform.tfvars новые строчки:
+
+```
+metadata = {
+  "serial-port-enable" = "1"
+  "ssh-keys"           = "ubuntu:ssh-rsa AAAAB3N******Hop0OP5MUUQX"
+}
+
+```
+Которые убирают NAT из кода.
+
+Подключился к каждому серверу поменял пароль и активировал пользователя (потому что состояние было L а нам нужно чтобы было P:
+
+```
+sudo passwd -u ubuntu
+sudo passwd -S ubuntu
+
+Получил:
+
+ubuntu P 08/11/2026 0 99999 7 -1
+```
+Это на каждом сервере сделал.
+
+Затем создал таблицу маршрутизации в main.tf:
+```
+resource "yandex_vpc_route_table" "develop" {
+  name       = "develop-route-table"
+  network_id = yandex_vpc_network.develop.id
+
+  static_route {
+    destination_prefix = "0.0.0.0/0"
+    gateway_id         = yandex_vpc_gateway.nat_gateway.id
+  }
+}
+```
+
+Созданную таблицу маршрутизации подключил к обеим подсетям:
+
+route_table_id = yandex_vpc_route_table.develop.id
+
+После добавления ресурсов выполнил terraform validate, terraform plan.
+
+
+Terraform показал создание NAT Gateway и таблицы маршрутизации, а также изменение двух подсетей:
+
+```
+Plan: 2 to add, 2 to change, 0 to destroy.
+```
+
+После создания NAT Gateway отключил собственные внешние IP у обеих ВМ. В terraform.tfvars добавил:
+```
+vm_web_nat = false
+vm_db_nat  = false
+```
+
+Дальше как обычно terraform validate и terraform plan:
+Plan: 0 to add, 2 to change, 0 to destroy.
+И в конце terraform apply:
+Apply complete! Resources: 0 added, 2 changed, 0 destroyed.
+Дополнительно через консоль проверил:
+
+```
+PS C:\Users\Александр\Documents\Project3\ter-homeworks\02\src> terraform console                            
+> var.vm_web_nat
+false
+> var.vm_db_nat
+false
+> yandex_compute_instance.platform.network_interface[0].nat
+false
+> yandex_compute_instance.platform_db.network_interface[0].nat
+false
+```
+
+Все значения false значит все получилось! Захожу в консоль яндекса:
+
+<img width="1315" height="734" alt="image" src="https://github.com/user-attachments/assets/36468b4b-3180-4fa6-ad8f-5f893708614b" />
+
+<img width="857" height="595" alt="image" src="https://github.com/user-attachments/assets/930520d5-0857-430e-ac4e-5bd026c93055" />
+
+
+На ВМ остались только внутренние айпи адреса.
+
+<img width="2548" height="896" alt="image" src="https://github.com/user-attachments/assets/db2e1a00-8bac-4c29-94c9-db80635640d3" />
+
+Краткий вывод из всего выше проделланого: Маршрут, по которому мы кинули 0.0.0.0/0 отправляет исходящий трафик в NAT Gateway, а он выполняет преобразование адресов и выпускает трафик наружу. При этом напрямую подключиться к ВМ из интернета по SSH уже нельзя.
+Делаем финальный terraform destroy:
+```
+Destroy complete! Resources: 7 destroyed.
+```
+
+Все задания выполнены!
